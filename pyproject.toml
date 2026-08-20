@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "meetingcap"
+version = "0.1.0"
+description = "Zero-admin meeting recorder: system audio and microphone as independent tracks"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "Proprietary" }
+classifiers = [
+    "Environment :: Console",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Sound/Audio :: Capture/Recording",
+]
+
+# Platform markers mean `pip install .` pulls the right adapter dependency on
+# each machine and nothing extra. Linux needs no audio package: capture goes
+# through pw-record/parec, which ship with PipeWire/PulseAudio.
+dependencies = [
+    "numpy>=1.21",
+    "PyAudioWPatch>=0.2.12; sys_platform == 'win32'",
+    "sounddevice>=0.4.6; sys_platform == 'darwin'",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+# macOS extras for the experimental in-process ScreenCaptureKit path and for
+# reading the microphone permission state. The Swift helper (recommended) needs
+# neither.
+macos-native = [
+    "pyobjc-framework-ScreenCaptureKit>=9.0; sys_platform == 'darwin'",
+    "pyobjc-framework-AVFoundation>=9.0; sys_platform == 'darwin'",
+    "pyobjc-framework-Quartz>=9.0; sys_platform == 'darwin'",
+]
+
+[project.scripts]
+meeting-capture = "meetingcap.cli:main"
+
+[tool.setuptools]
+packages = ["meetingcap", "meetingcap.audio", "meetingcap.capture", "meetingcap.ui"]
+py-modules = ["meeting_capture"]

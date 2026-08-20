@@ -169,6 +169,34 @@ def test_missing_dependency_prints_one_copyable_command(monkeypatch, capsys):
     assert "SomePackage" in out and "pip install" in out
 
 
+def test_module_entry_point_actually_runs(tmp_path):
+    """`python -m meetingcap` must call main(), not just import it."""
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-m", "meetingcap", "--list-devices",
+         "--source", "synthetic"],
+        capture_output=True, text=True, timeout=60,
+        cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    assert result.returncode == 0, result.stderr
+    assert "Synthetic Speakers" in result.stdout
+
+
+def test_script_entry_point_actually_runs():
+    """`python meeting_capture.py` is the invocation the spec names."""
+    import subprocess
+    import sys
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    result = subprocess.run(
+        [sys.executable, os.path.join(root, "meeting_capture.py"),
+         "--check", "--source", "synthetic"],
+        capture_output=True, text=True, timeout=60, cwd=root)
+    assert result.returncode == 0, result.stderr
+    assert "Administrator privileges: NOT REQUIRED" in result.stdout
+
+
 def test_install_commands_never_ask_for_elevation():
     dep = Dependency("pyaudiowpatch", "PyAudioWPatch", "loopback")
     assert install_command([dep], "Windows").startswith("py -m pip install")

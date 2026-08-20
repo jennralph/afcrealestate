@@ -7,3 +7,8 @@ meetings/
 *.wav
 helpers/macos/meetingcap-system-audio
 helpers/windows/*.exe
+
+# packaging / bootstrap artifacts
+build/
+dist/
+*.egg-info/

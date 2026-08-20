@@ -11,9 +11,57 @@ before transcription and AI notes are built on top of it (§22, §46). The
 boundary those later phases plug into is already here and tested
 (`Recorder.subscribe`, §22).
 
+## Quickstart
+
+Only Python 3.9+ is needed. One command sets everything up — a local
+`.venv`, the right dependencies for your platform, the macOS helper if Swift
+is present — and finishes by checking your devices and permissions.
+
+**Windows**
+```powershell
+git clone https://github.com/jennralph/afcrealestate.git
+cd afcrealestate
+powershell -ExecutionPolicy Bypass -File setup.ps1
+.venv\Scripts\meeting-capture
 ```
+
+**macOS / Linux**
+```bash
+git clone https://github.com/jennralph/afcrealestate.git
+cd afcrealestate
+./setup.sh
+.venv/bin/meeting-capture
+```
+
+No sudo, no UAC, no elevated shell, no drivers. Everything stays inside the
+folder; delete it and nothing is left behind.
+
+Before your first real meeting:
+
+```
+.venv/bin/meeting-capture --diagnostics      # plays/records a test, reports PASS/FAIL
+```
+
+Recordings land in `./meetings/<date>_<title>/`. Press Ctrl+C to stop.
+
+### If you'd rather do it by hand
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install .        # .venv\Scripts\python on Windows
+.venv/bin/meeting-capture
+```
+
+Or with nothing installed at all — just `numpy` (plus `PyAudioWPatch` on
+Windows, `sounddevice` on macOS) on your existing Python:
+
+```bash
 python meeting_capture.py
 ```
+
+All three invocations are the same program. On macOS, also build the
+system-audio helper: `./setup.sh` does it automatically, or see
+`helpers/macos/README.md`.
 
 ## What works today
 
@@ -56,31 +104,23 @@ System audio: SUPPORTED_BUT_PERMISSION_MISSING
   No administrator password is required by this application.
 ```
 
-## Install
+## What each platform needs
 
-Dependencies are detected, never installed. If something is missing the
-program prints one copyable command and exits.
+`setup.sh` / `setup.ps1` install all of this for you; the table is here so you
+know what is going on your machine.
 
-**Windows**
-```
-py -m venv .venv
-.venv\Scripts\python -m pip install numpy PyAudioWPatch
-```
+| | Python packages | Also needed | Permissions |
+| --- | --- | --- | --- |
+| Windows 10/11 | `numpy`, `PyAudioWPatch` | nothing — WASAPI loopback is built in | microphone access for desktop apps |
+| macOS 13+ | `numpy`, `sounddevice` | the Swift helper, built by `setup.sh` | Screen & System Audio Recording, Microphone |
+| Linux | `numpy` | PipeWire or PulseAudio (already on any normal desktop) | none |
 
-**macOS**
-```
-python3 -m venv .venv
-.venv/bin/python -m pip install numpy sounddevice
-```
-then build the system-audio helper — see `helpers/macos/README.md`.
+Nothing here is a driver, a kernel extension or a virtual audio cable, and
+none of it needs an administrator shell.
 
-**Linux** (PipeWire or PulseAudio, already present on a normal desktop)
-```
-python3 -m venv .venv
-.venv/bin/python -m pip install numpy
-```
-
-No administrator shell in any case.
+The recorder itself never installs anything: if a package is missing it
+prints one copyable command and exits (spec §21). `bootstrap.py` is the
+separate, deliberate step that does the installing.
 
 ## Usage
 
@@ -174,11 +214,10 @@ distinction the spec asks for (§13, §26): SYSTEM is *others*, MIC is *me*.
 ## Tests
 
 ```
-python -m pip install pytest
-python -m pytest
+./setup.sh --dev        # or: .venv/bin/python -m pytest
 ```
 
-103 tests, no hardware required. They cover resampling continuity, the WAV
+105 tests, no hardware required. They cover resampling continuity, the WAV
 crash-repair path, gap padding, the backoff schedule, device-switch recovery,
 watchdog restarts, Windows loopback device resolution (against a fake
 PyAudioWPatch), PipeWire/PulseAudio discovery (against fake `pactl` output),
@@ -186,9 +225,15 @@ the CLI and the diagnostics.
 
 ## Verification status
 
-Verified here: everything exercised by the test suite and by
-`--source synthetic` on Linux, including a full record → device switch →
-recover → finalise cycle.
+Verified here: `./setup.sh --dev` from a clean checkout (venv, install,
+tests, permission check), all three entry points (`meeting-capture`,
+`python -m meetingcap`, `python meeting_capture.py`), and everything the test
+suite and `--source synthetic` exercise on Linux — including a full record →
+device switch → recover → finalise cycle.
+
+`setup.ps1` is a thin wrapper that locates Python and calls `bootstrap.py`;
+`bootstrap.py` itself is cross-platform and was run here, but the Windows
+wrapper and the `swiftc` build step have no host to run on in this container.
 
 Not verified here: real WASAPI loopback, ScreenCaptureKit and PipeWire
 capture, which need Windows, macOS and a Linux desktop with an audio server
