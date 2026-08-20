@@ -94,4 +94,8 @@ def report(system: Optional[str] = None) -> str:
 
 
 def _python() -> str:
+    if getattr(sys, "frozen", False):
+        # sys.executable is the bundled app, not an interpreter that could
+        # run pip; name the command a user would actually type.
+        return "python3"
     return sys.executable or "python3"

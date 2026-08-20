@@ -1,0 +1,144 @@
+name: Build executables
+
+# PyInstaller does not cross-compile, so each executable is built on its own
+# operating system here. Download them from the run's Artifacts section; a
+# tagged push (v*) also attaches them to a GitHub release.
+#
+# The macOS job compiles the ScreenCaptureKit helper, which is the only place
+# in this project where that Swift source gets built at all.
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write        # needed only by the release step on a tag
+
+jobs:
+  windows:
+    name: Windows .exe
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # PyAudioWPatch publishes wheels for 3.11; newer versions may have
+          # to build from source.
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ".[dev]" pyinstaller
+
+      - name: Run tests
+        run: python -m pytest -q
+
+      - name: Verify WASAPI loopback is reachable
+        # A GitHub runner has no audio endpoint, so this must not fail the
+        # build: it is here to show what the backend reports on real Windows.
+        continue-on-error: true
+        run: python meeting_capture.py --check
+
+      - name: Build MeetingCapture.exe
+        run: python build_exe.py --clean
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MeetingCapture-windows
+          path: dist/MeetingCapture.exe
+          if-no-files-found: error
+
+  macos:
+    name: macOS build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ".[dev]" pyinstaller
+
+      - name: Run tests
+        run: python -m pytest -q
+
+      - name: Compile the ScreenCaptureKit helper
+        run: |
+          swiftc -O -framework ScreenCaptureKit -framework AVFoundation \
+            -o helpers/macos/meetingcap-system-audio \
+            helpers/macos/SystemAudioCapture.swift
+          ls -l helpers/macos/meetingcap-system-audio
+
+      - name: Build MeetingCapture
+        run: python build_exe.py --clean
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MeetingCapture-macos
+          path: dist/MeetingCapture
+          if-no-files-found: error
+
+  linux:
+    name: Linux build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ".[dev]" pyinstaller
+
+      - name: Run tests
+        run: python -m pytest -q
+
+      - name: Build MeetingCapture
+        run: python build_exe.py --clean
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MeetingCapture-linux
+          path: dist/MeetingCapture
+          if-no-files-found: error
+
+  release:
+    name: Attach to release
+    needs: [windows, macos, linux]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Rename per platform
+        run: |
+          mkdir -p release
+          cp artifacts/MeetingCapture-windows/MeetingCapture.exe release/MeetingCapture-windows.exe
+          cp artifacts/MeetingCapture-macos/MeetingCapture release/MeetingCapture-macos
+          cp artifacts/MeetingCapture-linux/MeetingCapture release/MeetingCapture-linux
+          ls -l release
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" release/* \
+            --title "${GITHUB_REF_NAME}" \
+            --notes "Unsigned builds. Windows SmartScreen and macOS Gatekeeper will warn on first run; see the README." \
+            || gh release upload "${GITHUB_REF_NAME}" release/* --clobber

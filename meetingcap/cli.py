@@ -29,6 +29,7 @@ from .capture.recorder import Recorder, RecorderConfig
 from .capture.wavio import repair_wav
 from .deps import missing as missing_deps, report as deps_report, setup_instructions
 from .diagnostics import run_diagnostics
+from .frozen import default_output_dir
 from .permissions import blocking as blocking_permissions
 from .ui import console
 
@@ -44,8 +45,9 @@ def build_parser() -> argparse.ArgumentParser:
                     "operating-system privacy permission.")
     parser.add_argument("--list-devices", action="store_true",
                         help="list audio devices and exit")
-    parser.add_argument("--output", default="./meetings", metavar="DIR",
-                        help="where to store sessions (default: ./meetings)")
+    parser.add_argument("--output", default=None, metavar="DIR",
+                        help="where to store sessions (default: ./meetings, or "
+                             "Documents/MeetingCapture in a packaged build)")
     parser.add_argument("--mic", default="auto", metavar="NAME",
                         help="microphone to capture (default: auto)")
     parser.add_argument("--system", default="auto", metavar="NAME",
@@ -82,6 +84,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Optional[List[str]] = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.output is None:
+        args.output = default_output_dir()
 
     gaps = missing_deps()
     if gaps:

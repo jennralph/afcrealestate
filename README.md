@@ -63,6 +63,62 @@ All three invocations are the same program. On macOS, also build the
 system-audio helper: `./setup.sh` does it automatically, or see
 `helpers/macos/README.md`.
 
+## Sending it to someone who has no Python
+
+`build_exe.py` packages everything — interpreter, dependencies, the macOS
+helper — into **one double-clickable file** with no installer and no
+administrator rights.
+
+```
+python build_exe.py --clean
+```
+
+| Built on | Produces | Size |
+| --- | --- | --- |
+| Windows | `dist\MeetingCapture.exe` | ~30–45 MB |
+| macOS | `dist/MeetingCapture` | ~25 MB |
+| Linux | `dist/MeetingCapture` | ~24 MB |
+
+The build ends with a smoke test: the executable has to answer `--version`,
+list devices and record a synthetic session before the script calls it done.
+
+**PyInstaller does not cross-compile.** A Windows `.exe` has to be built on
+Windows, a macOS build on a Mac.
+
+### No Windows machine? Let CI build it
+
+Push the branch and `.github/workflows/build-installers.yml` builds all three
+on GitHub-hosted runners, runs the tests on each, and uploads them:
+
+* **Actions** → the latest run → **Artifacts** → `MeetingCapture-windows`
+* or tag a release (`git tag v0.1.0 && git push --tags`) and the executables
+  are attached to it
+
+That macOS job is also the only place the ScreenCaptureKit helper gets
+compiled — worth watching the first time it runs.
+
+### What the recipient sees
+
+They double-click; a console window opens with the device banner and the
+level meters, and Ctrl+C stops the recording. Recordings go to
+`Documents\MeetingCapture\<date>_<title>\`, not to whichever folder the file
+was dropped in. The window is held open at the end so the summary — or an
+error — can actually be read.
+
+Two things to warn them about, both consequences of the file being unsigned:
+
+* **Windows SmartScreen**: "Windows protected your PC" → *More info* → *Run
+  anyway*. Removing that warning needs an Authenticode code-signing
+  certificate (a purchase, not a code change).
+* **macOS Gatekeeper**: right-click → *Open* the first time, or sign and
+  notarise the build.
+
+Some antivirus engines also flag PyInstaller one-file executables generically.
+The build deliberately does not use UPX compression, which is the main trigger.
+
+A packaged build changes nothing about the security model: still no elevation,
+still no drivers, still the same OS permission prompts.
+
 ## What works today
 
 | Spec | Capability | Status |
@@ -217,7 +273,7 @@ distinction the spec asks for (§13, §26): SYSTEM is *others*, MIC is *me*.
 ./setup.sh --dev        # or: .venv/bin/python -m pytest
 ```
 
-105 tests, no hardware required. They cover resampling continuity, the WAV
+112 tests, no hardware required. They cover resampling continuity, the WAV
 crash-repair path, gap padding, the backoff schedule, device-switch recovery,
 watchdog restarts, Windows loopback device resolution (against a fake
 PyAudioWPatch), PipeWire/PulseAudio discovery (against fake `pactl` output),
@@ -231,9 +287,14 @@ tests, permission check), all three entry points (`meeting-capture`,
 suite and `--source synthetic` exercise on Linux — including a full record →
 device switch → recover → finalise cycle.
 
-`setup.ps1` is a thin wrapper that locates Python and calls `bootstrap.py`;
-`bootstrap.py` itself is cross-platform and was run here, but the Windows
-wrapper and the `swiftc` build step have no host to run on in this container.
+Also verified: `build_exe.py` produces a working single-file binary — built,
+smoke-tested and run standalone from a different folder on Linux.
+
+Not verified here, for lack of a host: the Windows `.exe` and macOS build
+(PyInstaller cannot cross-compile), `setup.ps1`, the `swiftc` compile of the
+ScreenCaptureKit helper, and the CI workflow itself. The packaging is
+platform-neutral and the Linux build exercises the same spec and script, but
+the first Actions run is where the Windows and macOS paths get proven.
 
 Not verified here: real WASAPI loopback, ScreenCaptureKit and PipeWire
 capture, which need Windows, macOS and a Linux desktop with an audio server

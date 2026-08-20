@@ -12,3 +12,4 @@ helpers/windows/*.exe
 build/
 dist/
 *.egg-info/
+dist/
