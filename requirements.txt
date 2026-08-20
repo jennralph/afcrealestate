@@ -1,0 +1,13 @@
+# Runtime dependencies. The program detects these and never installs them
+# itself (spec 21) -- install with an ordinary, non-administrator shell.
+numpy>=1.21
+
+# Windows: WASAPI shared-mode loopback + microphone
+PyAudioWPatch>=0.2.12; sys_platform == "win32"
+
+# macOS: microphone capture (system audio uses the Swift ScreenCaptureKit
+# helper in helpers/macos/)
+sounddevice>=0.4.6; sys_platform == "darwin"
+
+# Linux needs no Python audio package: capture goes through pw-record/parec,
+# which ship with PipeWire/PulseAudio.
