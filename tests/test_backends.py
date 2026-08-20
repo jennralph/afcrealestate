@@ -5,6 +5,9 @@ thing, so they are exercised against fakes even on a machine that has neither
 WASAPI nor PipeWire.
 """
 
+import sys
+import types
+
 import pytest
 
 from meetingcap.audio import linux as linux_mod
@@ -21,16 +24,35 @@ from meetingcap.permissions import PermissionStatus, check_permissions, summariz
 
 
 class FakePyAudio:
-    """Enough of the PyAudioWPatch surface to test device resolution."""
+    """Enough of the PyAudioWPatch surface to test device resolution.
+
+    This has to model ``get_host_api_info_by_type`` even though a Linux test
+    run never reaches it: with PyAudioWPatch installed (i.e. on Windows) that
+    is the *first* thing the resolver calls, so a fake without it exercises a
+    fallback branch instead of the real path.
+    """
 
     def __init__(self, devices, default_output=None, default_input=None,
-                 has_default_loopback=False):
+                 has_default_loopback=False, wasapi_default_output=None,
+                 wasapi_default_input=None, has_host_api=True):
         self.devices = devices
         self._default_output = default_output
         self._default_input = default_input
         self.has_default_loopback = has_default_loopback
+        # WASAPI host-API defaults; -1 means "the host API reports none".
+        self._wasapi = {
+            "defaultOutputDevice": (wasapi_default_output
+                                    if wasapi_default_output is not None else -1),
+            "defaultInputDevice": (wasapi_default_input
+                                   if wasapi_default_input is not None else -1),
+        }
         if has_default_loopback:
             self.get_default_wasapi_loopback = self._default_loopback
+        if has_host_api:
+            self.get_host_api_info_by_type = self._host_api_info
+
+    def _host_api_info(self, host_api_type):
+        return dict(self._wasapi)
 
     def _default_loopback(self):
         return next(d for d in self.devices if d.get("isLoopbackDevice"))
@@ -59,6 +81,22 @@ def device(index, name, *, loopback=False, inputs=0, outputs=0, rate=48_000):
     return {"index": index, "name": name, "isLoopbackDevice": loopback,
             "maxInputChannels": inputs, "maxOutputChannels": outputs,
             "defaultSampleRate": rate}
+
+
+@pytest.fixture
+def with_pyaudiowpatch(monkeypatch):
+    """Make the WASAPI branch reachable off Windows.
+
+    Without this the resolver's ``import pyaudiowpatch`` fails on Linux and
+    macOS and the code silently takes its fallback path — so the branch that
+    actually runs on Windows would never be tested anywhere.
+    """
+    module = types.ModuleType("pyaudiowpatch")
+    module.paWASAPI = 13
+    module.paFloat32 = 1
+    module.paContinue = 0
+    monkeypatch.setitem(sys.modules, "pyaudiowpatch", module)
+    return module
 
 
 def test_loopback_matches_the_current_default_output():
@@ -115,6 +153,52 @@ def test_missing_microphone_explains_itself():
     with pytest.raises(AudioSourceError) as excinfo:
         win.resolve_input_device(pa)
     assert "Windows Sound settings" in str(excinfo.value)
+
+
+def test_loopback_matches_the_wasapi_default_output(with_pyaudiowpatch):
+    """The path Windows actually takes: ask the WASAPI host API first."""
+    devices = [
+        device(0, "Realtek Speakers", outputs=2),
+        device(1, "AirPods", outputs=2),
+        device(2, "Realtek Speakers [Loopback]", loopback=True, inputs=2),
+        device(3, "AirPods [Loopback]", loopback=True, inputs=2),
+    ]
+    # PortAudio's default is stale (index 0) while WASAPI reports AirPods:
+    # the WASAPI answer must win, or we would record the wrong endpoint.
+    pa = FakePyAudio(devices, default_output=0, wasapi_default_output=1)
+    assert win.resolve_loopback_device(pa)["name"] == "AirPods [Loopback]"
+
+
+def test_input_uses_the_wasapi_default_capture_endpoint(with_pyaudiowpatch):
+    devices = [
+        device(0, "Laptop Microphone", inputs=1),
+        device(1, "AirPods Hands-Free", inputs=1),
+    ]
+    pa = FakePyAudio(devices, default_input=0, wasapi_default_input=1)
+    assert win.resolve_input_device(pa)["name"] == "AirPods Hands-Free"
+
+
+def test_resolution_survives_a_pyaudiowpatch_without_host_api_helpers(
+        with_pyaudiowpatch):
+    """An older PyAudioWPatch lacks the helper; fall back, never crash."""
+    devices = [
+        device(0, "Speakers", outputs=2),
+        device(1, "Speakers [Loopback]", loopback=True, inputs=2),
+        device(2, "Laptop Microphone", inputs=1),
+    ]
+    pa = FakePyAudio(devices, default_output=0, default_input=2,
+                     has_host_api=False)
+    assert win.resolve_loopback_device(pa)["name"] == "Speakers [Loopback]"
+    assert win.resolve_input_device(pa)["name"] == "Laptop Microphone"
+
+
+def test_wasapi_reporting_no_default_falls_back(with_pyaudiowpatch):
+    devices = [device(0, "Speakers", outputs=2),
+               device(1, "Speakers [Loopback]", loopback=True, inputs=2),
+               device(2, "Laptop Microphone", inputs=1)]
+    pa = FakePyAudio(devices, default_output=0, default_input=2)   # WASAPI: -1
+    assert win.resolve_loopback_device(pa)["name"] == "Speakers [Loopback]"
+    assert win.resolve_input_device(pa)["name"] == "Laptop Microphone"
 
 
 def test_oserror_translation_names_the_condition():

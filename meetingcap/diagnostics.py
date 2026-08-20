@@ -218,13 +218,27 @@ class Diagnostics:
         if len(stamps) < 3:
             return CheckResult("TIMESTAMPING", False, "not enough captured blocks")
         deltas = [b - a for a, b in zip(stamps, stamps[1:])]
-        if any(d <= 0 for d in deltas):
+        if any(d < 0 for d in deltas):
             return CheckResult("TIMESTAMPING", False, "monotonic clock went backwards")
-        jitter_ms = statistics.pstdev(deltas) / 1e6 if len(deltas) > 1 else 0.0
+
+        # Equal timestamps are not a fault: Windows' monotonic clock ticks at
+        # about 15.6 ms by default, so several 10 ms blocks legitimately land
+        # on the same value.  Only a clock running *backwards* is broken.
+        # Report the coarseness instead, since it is what limits how precisely
+        # a device switch can be timestamped.
+        ties = sum(1 for d in deltas if d == 0)
         span_s = (stamps[-1] - stamps[0]) / 1e9
-        return CheckResult("TIMESTAMPING", True,
-                           f"{len(stamps)} blocks over {span_s:.1f}s, "
-                           f"jitter {jitter_ms:.1f} ms")
+        if span_s <= 0:
+            return CheckResult("TIMESTAMPING", False,
+                               "no time elapsed across the captured blocks")
+        jitter_ms = statistics.pstdev(deltas) / 1e6 if len(deltas) > 1 else 0.0
+        detail = (f"{len(stamps)} blocks over {span_s:.1f}s, "
+                  f"jitter {jitter_ms:.1f} ms")
+        if ties:
+            resolution_ms = min((d for d in deltas if d > 0), default=0) / 1e6
+            detail += (f", {ties} block(s) share a tick "
+                       f"(clock resolution ~{resolution_ms:.1f} ms)")
+        return CheckResult("TIMESTAMPING", True, detail)
 
     def check_device_watcher(self) -> CheckResult:
         seen: List[str] = []

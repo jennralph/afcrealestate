@@ -273,7 +273,7 @@ distinction the spec asks for (§13, §26): SYSTEM is *others*, MIC is *me*.
 ./setup.sh --dev        # or: .venv/bin/python -m pytest
 ```
 
-112 tests, no hardware required. They cover resampling continuity, the WAV
+119 tests, no hardware required. They cover resampling continuity, the WAV
 crash-repair path, gap padding, the backoff schedule, device-switch recovery,
 watchdog restarts, Windows loopback device resolution (against a fake
 PyAudioWPatch), PipeWire/PulseAudio discovery (against fake `pactl` output),

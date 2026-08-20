@@ -63,6 +63,42 @@ def test_diagnostics_disk_writer_check_covers_the_crash_path(tmp_path):
     assert result.passed and "repair OK" in result.detail
 
 
+def test_timestamping_tolerates_a_coarse_clock(tmp_path):
+    """Windows' monotonic clock ticks at ~15.6 ms, so blocks share a value.
+
+    Treating a repeated timestamp as "the clock went backwards" made
+    --diagnostics report FAIL on healthy Windows machines.
+    """
+    diag = Diagnostics(SyntheticBackend(), interactive=False,
+                       stream=io.StringIO(), output_dir=str(tmp_path))
+    tick = 15_600_000                      # 15.6 ms in nanoseconds
+    stamps = []
+    for i in range(20):
+        stamps += [i * tick] * 2           # two 10 ms blocks per clock tick
+    diag._system_timestamps = stamps
+
+    result = diag.check_timestamping()
+    assert result.passed, result.detail
+    assert "share a tick" in result.detail
+    assert "15.6 ms" in result.detail
+
+
+def test_timestamping_still_fails_if_the_clock_runs_backwards(tmp_path):
+    diag = Diagnostics(SyntheticBackend(), interactive=False,
+                       stream=io.StringIO(), output_dir=str(tmp_path))
+    diag._system_timestamps = [0, 20_000_000, 10_000_000, 30_000_000]
+    result = diag.check_timestamping()
+    assert not result.passed
+    assert "backwards" in result.detail
+
+
+def test_timestamping_fails_when_no_time_elapsed(tmp_path):
+    diag = Diagnostics(SyntheticBackend(), interactive=False,
+                       stream=io.StringIO(), output_dir=str(tmp_path))
+    diag._system_timestamps = [5, 5, 5, 5]
+    assert not diag.check_timestamping().passed
+
+
 def test_diagnostics_resampling_check_is_self_contained(tmp_path):
     _, _, diag = run_diagnostics(tmp_path)
     result = next(r for r in diag.results if r.name == "48k RESAMPLING")

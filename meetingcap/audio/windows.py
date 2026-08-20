@@ -227,7 +227,9 @@ def resolve_input_device(pa, prefer_device: Optional[str] = None) -> dict:
         index = int(wasapi.get("defaultInputDevice", -1))
         if index >= 0:
             return dict(pa.get_device_info_by_index(index))
-    except (ImportError, OSError, LookupError, ValueError):
+    except (ImportError, AttributeError, OSError, LookupError, ValueError):
+        # AttributeError: the installed PyAudioWPatch predates the
+        # WASAPI host-API helpers.  Fall back rather than crash.
         pass
     try:
         return dict(pa.get_default_input_device_info())
@@ -244,7 +246,9 @@ def _default_render_device(pa) -> Optional[dict]:
         index = int(wasapi.get("defaultOutputDevice", -1))
         if index >= 0:
             return dict(pa.get_device_info_by_index(index))
-    except (ImportError, OSError, LookupError, ValueError):
+    except (ImportError, AttributeError, OSError, LookupError, ValueError):
+        # AttributeError: the installed PyAudioWPatch predates the
+        # WASAPI host-API helpers.  Fall back rather than crash.
         pass
     try:
         return dict(pa.get_default_output_device_info())
