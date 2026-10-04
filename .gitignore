@@ -13,3 +13,9 @@ build/
 dist/
 *.egg-info/
 dist/
+
+# Harbor VPN
+vpn/backend/bin/
+vpn/ios/*.xcodeproj/
+vpn/ios/build/
+.build/

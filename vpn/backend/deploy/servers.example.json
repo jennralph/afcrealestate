@@ -1,0 +1,39 @@
+{
+  "servers": [
+    {
+      "id": "nl-ams-01",
+      "country_code": "nl",
+      "country": "Netherlands",
+      "city": "Amsterdam",
+      "latitude": 52.37,
+      "longitude": 4.90,
+      "hostname": "nl-ams-01.harborvpn.example",
+      "ipv4": "203.0.113.10",
+      "ipv6": "2001:db8:10::10",
+      "port": 51820,
+      "public_key": "REPLACE_WITH_wg_pubkey_FROM_node-setup.sh",
+      "free": true,
+      "features": [],
+      "capacity_peers": 1500,
+      "link_mbps": 10000,
+      "node_token_sha256": "REPLACE_WITH_64_HEX_CHARS_FROM_node-setup.sh"
+    },
+    {
+      "id": "us-nyc-01",
+      "country_code": "us",
+      "country": "United States",
+      "city": "New York",
+      "latitude": 40.71,
+      "longitude": -74.01,
+      "hostname": "us-nyc-01.harborvpn.example",
+      "ipv4": "203.0.113.20",
+      "port": 51820,
+      "public_key": "REPLACE_WITH_wg_pubkey_FROM_node-setup.sh",
+      "free": false,
+      "features": ["streaming", "p2p"],
+      "capacity_peers": 1500,
+      "link_mbps": 10000,
+      "node_token_sha256": "REPLACE_WITH_64_HEX_CHARS_FROM_node-setup.sh"
+    }
+  ]
+}

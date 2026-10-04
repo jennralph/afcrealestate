@@ -1,0 +1,22 @@
+[Unit]
+Description=Harbor VPN control plane
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# /etc/harbor/api.env holds HARBOR_ACCOUNT_SECRET=<openssl rand -hex 32>
+EnvironmentFile=/etc/harbor/api.env
+ExecStart=/usr/local/bin/harbor-api -listen 127.0.0.1:8080 -trust-proxy \
+  -db /var/lib/harbor/db.json -servers /etc/harbor/servers.json \
+  -apple-root /etc/harbor/AppleRootCA-G3.cer -bundle-id net.harborvpn.app \
+  -products harbor.monthly,harbor.yearly
+StateDirectory=harbor
+DynamicUser=yes
+Restart=always
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
