@@ -1,0 +1,7 @@
+Supporting/
+Harbor.xcodeproj/
+Vendor/WireGuardKit/WireGuardKitGo.xcframework/
+Vendor/WireGuardKit/.build-go/
+HarborCore/.build/
+Vendor/WireGuardKit/.build/
+DerivedData/

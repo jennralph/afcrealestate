@@ -1,0 +1,70 @@
+name: Harbor VPN
+
+# Backend tests on Linux; the iPhone app (which can only be compiled with
+# Xcode) is built for both the simulator and real devices on macOS, unsigned.
+
+on:
+  push:
+    paths: ["vpn/**", ".github/workflows/harbor-vpn.yml"]
+  pull_request:
+    paths: ["vpn/**", ".github/workflows/harbor-vpn.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (Go)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vpn/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: vpn/backend/go.mod
+          cache-dependency-path: vpn/backend/go.sum
+      - name: Vet
+        run: go vet ./...
+      - name: Format
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - name: Test
+        run: go test -race ./...
+      - name: Build
+        run: go build -o bin/ ./cmd/...
+      - name: Check deploy scripts
+        run: bash -n deploy/*.sh
+
+  ios:
+    name: iOS app
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: vpn/ios
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: false
+      - name: Select Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app | sort -V | tail -1)" && xcodebuild -version
+      - name: HarborCore unit tests
+        working-directory: vpn/ios/HarborCore
+        run: swift test
+      - name: Build WireGuard Go bridge
+        run: ./scripts/build-wireguard-go.sh
+      - name: Generate Xcode project
+        run: brew install xcodegen xcbeautify && xcodegen generate
+      - name: Build for simulator
+        run: >
+          xcodebuild build -project Harbor.xcodeproj -scheme Harbor
+          -destination 'generic/platform=iOS Simulator'
+          CODE_SIGNING_ALLOWED=NO | xcbeautify --renderer github-actions
+      - name: Build for device
+        run: >
+          xcodebuild build -project Harbor.xcodeproj -scheme Harbor
+          -destination 'generic/platform=iOS'
+          CODE_SIGNING_ALLOWED=NO | xcbeautify --renderer github-actions
