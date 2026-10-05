@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Harbor VPN</title>
+  <meta name="description" content="Private, fast WireGuard VPN for iPhone. No email, no logs.">
+  <meta name="theme-color" content="#2973fa" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0b1020" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Harbor">
+  <meta name="format-detection" content="telephone=no">
+  <link rel="apple-touch-icon" href="/icon-180.png">
+  <link rel="icon" type="image/png" href="/icon-192.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="stylesheet" href="/app.css">
+  <script src="/vendor/nacl-fast.min.js" defer></script>
+  <script src="/vendor/qrcode.js" defer></script>
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main id="app" aria-live="polite">
+    <div class="center"><div class="spinner" aria-label="Loading"></div></div>
+  </main>
+  <div id="toast" role="status" hidden></div>
+  <noscript><p class="center">Harbor needs JavaScript to create your secure keys on this device.</p></noscript>
+</body>
+</html>

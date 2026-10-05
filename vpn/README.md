@@ -75,6 +75,47 @@ iPhone                                           Your servers
 - Servers that stop sending heartbeats are hidden from the app within 90
   seconds.
 
+## Try it now: the web version (no Mac, no App Store)
+
+iOS doesn't let a website create a VPN, so the web version splits the job:
+Harbor's site handles your account, location and ad blocking, and Apple's
+free **WireGuard** app runs the tunnel. You use the same servers, keys and
+privacy as the native app. The site is served by `harbor-api` itself, at the
+root URL.
+
+**Set it up on one server (about 10 minutes)**
+1. Rent a small Ubuntu 24.04 server (€4–6/month from Hetzner,
+   DigitalOcean, Vultr and others). Pick the country you want to appear in.
+2. In the provider's firewall, open TCP 80, TCP 443 and UDP 51820.
+3. On the server, run:
+   ```bash
+   git clone https://github.com/jennralph/afcrealestate.git
+   cd afcrealestate/vpn/backend
+   sudo ./deploy/all-in-one.sh
+   ```
+   It installs WireGuard, ad-blocking DNS, the API, the web app and HTTPS.
+   When it finishes, it prints your address, such as
+   `https://203-0-113-10.sslip.io`. No domain is needed.
+
+**Use it on your iPhone**
+1. Open that address in Safari. Tap Share, then **Add to Home Screen**.
+2. Tap **Get started** and save the account number it shows.
+3. Tap **Set up Harbor**, then follow the 4 steps. Install WireGuard, save
+   the file, import it in WireGuard, and turn it on.
+4. In WireGuard, open the tunnel and tap Edit, then On-Demand. Turn on Wi-Fi
+   and Cellular so it reconnects by itself.
+5. Optional, for more than 1 device on your own account: run
+   `sudo harbor-grant <account number> 3650` on the server.
+
+What the web version can't do (only the native app can):
+- Smart Location doesn't measure latency; it uses your region instead.
+- Widgets, the Control Center toggle and the Live Activity aren't available.
+- Changing location or Threat Protection means adding the tunnel to
+  WireGuard again. Each location becomes its own switch there.
+- The private key is kept in Safari's storage so you can add more locations.
+  If you clear Safari's data, sign in again and remove the old device under
+  Account.
+
 ## Running it
 
 ### 1. Backend

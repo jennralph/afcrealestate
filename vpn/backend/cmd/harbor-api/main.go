@@ -7,6 +7,11 @@
 //
 // Put it behind a TLS-terminating proxy (Caddy, nginx) and pass -trust-proxy.
 // The proxy must not write access logs either.
+//
+// To give an account paid access without the App Store (yourself, testers),
+// stop the service and run:
+//
+//	harbor-api grant -db /var/lib/harbor/db.json -days 365 1234567890123456
 package main
 
 import (
@@ -27,9 +32,14 @@ import (
 	"github.com/jennralph/afcrealestate/vpn/backend/internal/appstore"
 	"github.com/jennralph/afcrealestate/vpn/backend/internal/ipam"
 	"github.com/jennralph/afcrealestate/vpn/backend/internal/store"
+	"github.com/jennralph/afcrealestate/vpn/backend/internal/web"
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "grant" {
+		grant(os.Args[2:])
+		return
+	}
 	listen := flag.String("listen", "127.0.0.1:8080", "address to serve HTTP on")
 	dbPath := flag.String("db", "harbor-db.json", "account database file")
 	serversPath := flag.String("servers", "servers.json", "server catalog")
@@ -38,6 +48,7 @@ func main() {
 	products := flag.String("products", "harbor.monthly,harbor.yearly", "comma-separated subscription product IDs")
 	sandbox := flag.Bool("allow-sandbox", false, "accept StoreKit sandbox/TestFlight transactions")
 	trustProxy := flag.Bool("trust-proxy", false, "use X-Forwarded-For for rate limiting")
+	webApp := flag.Bool("web", true, "serve the web app at /")
 	flag.Parse()
 	log.SetFlags(0) // journald adds timestamps; we add nothing else
 
@@ -56,6 +67,9 @@ func main() {
 	srv := &api.Server{
 		Store: st, Catalog: cat, Hasher: account.NewHasher([]byte(secret)),
 		Pools: ipam.Default, TrustProxy: *trustProxy,
+	}
+	if *webApp {
+		srv.Web = web.Handler()
 	}
 	if *appleRoot != "" {
 		der, err := os.ReadFile(*appleRoot)
@@ -90,6 +104,32 @@ func main() {
 	if err := hs.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
 	}
+}
+
+// grant gives an account paid access for a number of days. The API keeps
+// its database in memory, so run this only while harbor-api is stopped.
+func grant(args []string) {
+	fs := flag.NewFlagSet("grant", flag.ExitOnError)
+	dbPath := fs.String("db", "harbor-db.json", "account database file")
+	days := fs.Int("days", 365, "days of paid access from now")
+	_ = fs.Parse(args)
+	secret := os.Getenv("HARBOR_ACCOUNT_SECRET")
+	if fs.NArg() != 1 || len(secret) < 32 {
+		log.Fatal("usage: HARBOR_ACCOUNT_SECRET=... harbor-api grant [-db file] [-days n] <account number>")
+	}
+	number, err := account.Normalize(fs.Arg(0))
+	if err != nil {
+		log.Fatal(err)
+	}
+	st, err := store.Open(*dbPath, ipam.Default.Capacity())
+	if err != nil {
+		log.Fatalf("open db: %v", err)
+	}
+	a, err := st.Grant(account.NewHasher([]byte(secret)).Hash(number), time.Now().AddDate(0, 0, *days))
+	if err != nil {
+		log.Fatalf("grant: %v", err)
+	}
+	log.Printf("account …%s is paid until %s", number[12:], a.PaidUntil.Format("2006-01-02"))
 }
 
 type discard struct{}

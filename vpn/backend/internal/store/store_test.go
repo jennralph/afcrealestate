@@ -62,3 +62,21 @@ func TestPoolExhaustion(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+func TestGrantOnlyExtends(t *testing.T) {
+	st, _ := Open("", 10)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	st.SetClock(func() time.Time { return now })
+	st.CreateAccount("h")
+	if _, err := st.Grant("nope", now); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown account: %v", err)
+	}
+	a, _ := st.Grant("h", now.AddDate(1, 0, 0))
+	if !a.Paid(now) {
+		t.Fatal("grant should make the account paid")
+	}
+	b, _ := st.Grant("h", now.AddDate(0, 1, 0))
+	if !b.PaidUntil.Equal(a.PaidUntil) {
+		t.Fatal("a shorter grant must not cut an existing one")
+	}
+}

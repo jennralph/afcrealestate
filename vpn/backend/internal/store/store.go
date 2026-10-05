@@ -272,6 +272,21 @@ func (st *Store) ApplyPurchase(hash, originalTxID string, until time.Time) (Acco
 	return clone(a), st.save()
 }
 
+// Grant extends an account's paid period to until, for operators giving
+// access outside the App Store (friends, testers, the web version).
+func (st *Store) Grant(hash string, until time.Time) (Account, error) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	a, ok := st.s.Accounts[hash]
+	if !ok {
+		return Account{}, ErrNotFound
+	}
+	if until.After(a.PaidUntil) {
+		a.PaidUntil = until.UTC()
+	}
+	return clone(a), st.save()
+}
+
 // Peer is what a VPN node needs to admit a device.
 type Peer struct {
 	PublicKey string `json:"public_key"`

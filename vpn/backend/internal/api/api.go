@@ -45,6 +45,8 @@ type Server struct {
 	// only behind a reverse proxy that sets it.
 	TrustProxy bool
 	Now        func() time.Time
+	// Web, if set, serves the web app at "/".
+	Web http.Handler
 
 	signups *limiter
 }
@@ -69,6 +71,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/node/peers", s.withNode(s.nodePeers))
 	mux.HandleFunc("POST /v1/node/heartbeat", s.withNode(s.nodeHeartbeat))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	if s.Web != nil {
+		mux.Handle("GET /", s.Web)
+	}
 	return limitBody(mux)
 }
 
