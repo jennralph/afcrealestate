@@ -83,19 +83,26 @@ free **WireGuard** app runs the tunnel. You use the same servers, keys and
 privacy as the native app. The site is served by `harbor-api` itself, at the
 root URL.
 
-**Set it up on one server (about 10 minutes)**
-1. Rent a small Ubuntu 24.04 server (€4–6/month from Hetzner,
-   DigitalOcean, Vultr and others). Pick the country you want to appear in.
-2. In the provider's firewall, open TCP 80, TCP 443 and UDP 51820.
-3. On the server, run:
+**Set it up on one server (about 15 minutes, no terminal)**
+1. Create an account at a cloud provider with a server in the country you
+   want. Vultr has São Paulo and about 30 other cities, from about
+   $5/month.
+2. Deploy a server with Ubuntu 24.04 on the smallest plan. Turn on IPv6.
+   Paste this into **Cloud-Init User-Data** (on some providers it's called
+   "Startup script"):
    ```bash
-   git clone https://github.com/jennralph/afcrealestate.git
-   cd afcrealestate/vpn/backend
-   sudo ./deploy/all-in-one.sh
+   #!/bin/bash
+   curl -fsSL https://raw.githubusercontent.com/jennralph/afcrealestate/HEAD/vpn/backend/deploy/bootstrap.sh | bash -s all-in-one
    ```
-   It installs WireGuard, ad-blocking DNS, the API, the web app and HTTPS.
-   When it finishes, it prints your address, such as
-   `https://203-0-113-10.sslip.io`. No domain is needed.
+3. About 10 minutes after it boots, open `https://<server IP with dashes>.sslip.io`.
+   For example, IP 203.0.113.10 becomes `https://203-0-113-10.sslip.io`.
+   No domain is needed. If you have SSH, the setup log is in
+   `/var/log/harbor-setup.log`.
+4. **More countries:** the first account created on the server is the
+   owner. Its Account page has **Your locations → Show setup script**:
+   deploy another server in any city with that script, and it appears in
+   Locations by itself. Sign-ups close after 5 accounts; set
+   `MAX_ACCOUNTS` to change that.
 
 **Use it on your iPhone**
 1. Open that address in Safari. Tap Share, then **Add to Home Screen**.
@@ -104,8 +111,9 @@ root URL.
    the file, import it in WireGuard, and turn it on.
 4. In WireGuard, open the tunnel and tap Edit, then On-Demand. Turn on Wi-Fi
    and Cellular so it reconnects by itself.
-5. Optional, for more than 1 device on your own account: run
-   `sudo harbor-grant <account number> 3650` on the server.
+5. The owner account already has every location and 7 devices. Other
+   accounts are free (1 device) unless you run
+   `sudo harbor-grant <account number> 3650` on the main server.
 
 What the web version can't do (only the native app can):
 - Smart Location doesn't measure latency; it uses your region instead.

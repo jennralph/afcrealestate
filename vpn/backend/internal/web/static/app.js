@@ -12,6 +12,7 @@
   const toastEl = document.getElementById("toast");
   const WIREGUARD_APP = "https://apps.apple.com/app/wireguard/id1441195209";
   const DNS_KEY = { off: "standard", adsTrackers: "block_ads", adsTrackersMalware: "block_ads_malware" };
+  const BOOTSTRAP_URL = "https://raw.githubusercontent.com/jennralph/afcrealestate/HEAD/vpn/backend/deploy/bootstrap.sh";
 
   // ---- storage (Private Browsing can make localStorage throw) -------------
   const store = {
@@ -42,6 +43,7 @@
     query: "",
     setup: null, // { name, text, location }
     revealNumber: false,
+    locationScript: null, // owner only: startup script for a new location
   };
 
   // ---- tiny DOM helper ------------------------------------------------------
@@ -573,6 +575,8 @@
               h("button", { class: "btn danger", style: "width:auto;min-height:36px;font-size:15px", onclick: () => removeDevice(d) }, "Remove"))),
           acct && acct.devices.length ? null : h("div", { class: "row muted small" }, "No devices yet.")),
 
+        acct && acct.owner ? ownerSection() : null,
+
         h("h3", {}, "How Harbor protects you"),
         h("div", { class: "card small" },
           h("p", {}, "🔑 Your WireGuard private key is created in this browser and never sent to us."),
@@ -583,6 +587,35 @@
           h("button", { class: "btn danger", onclick: signOut }, "Sign out")));
     },
   };
+
+  const showLocationScript = () => run(async () => {
+    const { secret } = await api("GET", "/v1/owner/enroll");
+    state.locationScript = [
+      "#!/bin/bash",
+      `export HARBOR_API="${location.origin}" HARBOR_ENROLL_SECRET="${secret}"`,
+      `curl -fsSL ${BOOTSTRAP_URL} | bash -s add-location`,
+      "",
+    ].join("\n");
+  });
+
+  /** Lets the server's owner add countries without touching a terminal. */
+  function ownerSection() {
+    const count = locations().length;
+    return [
+      h("h3", {}, `Your locations (${count} online)`),
+      h("div", { class: "card small" },
+        h("p", {}, "To add a country, create one more server in that city: Ubuntu 24.04, the smallest plan. " +
+          "Paste the script below into the provider's “Cloud-Init User-Data” (or “Startup script”) box before you deploy. " +
+          "It sets itself up and appears in Locations in about 10 minutes."),
+        state.locationScript
+          ? [
+            h("pre", { class: "config mono" }, state.locationScript),
+            h("button", { class: "btn secondary", style: "margin-top:10px", onclick: () => copy(state.locationScript, "Script copied.") }, "Copy script"),
+            h("p", { class: "muted tiny", style: "margin:10px 0 0" }, "This script contains your server's enrollment secret. Only paste it into your own cloud account."),
+          ]
+          : h("button", { class: "btn secondary", onclick: showLocationScript, disabled: state.busy }, "Show setup script")),
+    ];
+  }
 
   function fillLocations(listEl) {
     const q = state.query.trim().toLowerCase();

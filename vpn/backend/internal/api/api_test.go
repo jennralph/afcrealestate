@@ -287,3 +287,67 @@ func TestPurchaseRejected(t *testing.T) {
 		t.Fatalf("bad tx: %d", code)
 	}
 }
+
+func TestEnrollAddsAndUpdatesNodes(t *testing.T) {
+	hs := newHarness(t)
+	node := map[string]any{
+		"country_code": "BR", "country": "Brazil", "city": "São Paulo", "ipv4": "198.51.100.77",
+		"public_key": randKey(t), "free": true, "node_token_sha256": tokenHash("br-node"),
+	}
+	if code := hs.do("POST", "/v1/node/enroll", "Bearer anything", node, nil); code != http.StatusUnauthorized {
+		t.Fatalf("enrollment must be off without a secret: %d", code)
+	}
+	hs.srv.EnrollSecret = "s3cret-s3cret-s3cret-s3cret-s3cret"
+	if code := hs.do("POST", "/v1/node/enroll", "Bearer wrong", node, nil); code != http.StatusUnauthorized {
+		t.Fatalf("wrong secret: %d", code)
+	}
+	var got map[string]string
+	if code := hs.do("POST", "/v1/node/enroll", "Bearer "+hs.srv.EnrollSecret, node, &got); code != http.StatusOK || got["id"] != "br-sao-paulo-01" {
+		t.Fatalf("enroll: %d %v", code, got)
+	}
+	// Re-running setup on the same node updates it instead of duplicating.
+	node["city"] = "Sao Paulo"
+	hs.do("POST", "/v1/node/enroll", "Bearer "+hs.srv.EnrollSecret, node, &got)
+	if n := len(hs.srv.Catalog.Servers()); n != 3 || got["id"] != "br-sao-paulo-01" {
+		t.Fatalf("re-enroll: %d servers, id %v", n, got)
+	}
+	// The new node can authenticate and shows up once it heartbeats.
+	hs.do("POST", "/v1/node/heartbeat", "Bearer br-node", map[string]any{"active_peers": 1}, nil)
+	var list struct {
+		Servers []serverJSON `json:"servers"`
+	}
+	hs.do("GET", "/v1/servers", "", nil, &list)
+	if len(list.Servers) != 1 || list.Servers[0].City != "Sao Paulo" || list.Servers[0].CountryCode != "br" {
+		t.Fatalf("servers: %+v", list.Servers)
+	}
+	node["ipv4"] = "not-an-ip"
+	if code := hs.do("POST", "/v1/node/enroll", "Bearer "+hs.srv.EnrollSecret, node, nil); code != http.StatusBadRequest {
+		t.Fatalf("bad node accepted: %d", code)
+	}
+}
+
+func TestPrivateServerSignups(t *testing.T) {
+	hs := newHarness(t)
+	hs.srv.MaxAccounts, hs.srv.OwnerDays = 2, 3650
+	var owner, second accountJSON
+	hs.do("POST", "/v1/accounts", "", nil, &owner)
+	hs.do("POST", "/v1/accounts", "", nil, &second)
+	if owner.Tier != "paid" || owner.MaxDevices != PaidDevices || second.Tier != "free" {
+		t.Fatalf("owner %s / second %s", owner.Tier, second.Tier)
+	}
+	var e map[string]string
+	if code := hs.do("POST", "/v1/accounts", "", nil, &e); code != http.StatusForbidden || e["code"] != "signups_closed" {
+		t.Fatalf("third signup: %d %v", code, e)
+	}
+	if !owner.Owner || second.Owner {
+		t.Fatalf("owner flags: %v %v", owner.Owner, second.Owner)
+	}
+	hs.srv.EnrollSecret = "s3cret-s3cret-s3cret-s3cret-s3cret"
+	var sec map[string]string
+	if code := hs.do("GET", "/v1/owner/enroll", "Account "+second.Number, nil, nil); code != http.StatusForbidden {
+		t.Fatalf("non-owner got the enroll secret: %d", code)
+	}
+	if code := hs.do("GET", "/v1/owner/enroll", "Account "+owner.Number, nil, &sec); code != http.StatusOK || sec["secret"] != hs.srv.EnrollSecret {
+		t.Fatalf("owner enroll: %d %v", code, sec)
+	}
+}

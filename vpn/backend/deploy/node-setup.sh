@@ -18,12 +18,20 @@ set -euo pipefail
 [[ $EUID -eq 0 ]] || { echo "run as root" >&2; exit 1; }
 : "${HARBOR_API:?set HARBOR_API to the control plane URL}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=lib.sh
+. "$HERE/lib.sh"
 WAN="$(ip -o -4 route show to default | awk '{print $5; exit}')"
 V4=10.64.0
 V6=fd68:6172:626f:7200
 
-apt-get update -q
-DEBIAN_FRONTEND=noninteractive apt-get install -yq wireguard-tools nftables unbound curl
+apt_get update
+apt_get install wireguard-tools nftables unbound curl python3
+
+# Our nftables rules below are the firewall. Many cloud images ship ufw
+# allowing only SSH, which would block the VPN and its forwarding.
+if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
+  ufw --force disable
+fi
 
 # ---- logging: keep nothing on disk -----------------------------------------
 mkdir -p /etc/systemd/journald.conf.d
@@ -48,9 +56,12 @@ SaveConfig = false
 EOF
 chmod 600 /etc/wireguard/wg0.conf
 
-cat >/etc/sysctl.d/90-harbor.conf <<'EOF'
+cat >/etc/sysctl.d/90-harbor.conf <<EOF
 net.ipv4.ip_forward = 1
 net.ipv6.conf.all.forwarding = 1
+# Forwarding normally makes Linux ignore router advertisements, which is how
+# most clouds hand out the server's own IPv6 route. Keep accepting them.
+net.ipv6.conf.${WAN}.accept_ra = 2
 net.core.default_qdisc = fq
 net.ipv4.tcp_congestion_control = bbr
 EOF
@@ -72,10 +83,16 @@ table inet harbor {
     oifname "${WAN}" ip6 saddr ${V6}::/64 masquerade
   }
   chain input {
-    type filter hook input priority 0; policy accept;
+    type filter hook input priority 0; policy drop;
+    iif "lo" accept
+    ct state established,related accept
+    ct state invalid drop
+    meta l4proto { icmp, ipv6-icmp } accept
+    tcp dport { 22, 80, 443 } accept
+    udp dport 51820 accept
     # DNS on the gateway only from inside the tunnel.
-    iifname != "wg0" udp dport 53 drop
-    iifname != "wg0" tcp dport 53 drop
+    iifname "wg0" udp dport 53 accept
+    iifname "wg0" tcp dport 53 accept
   }
 }
 EOF
@@ -100,6 +117,8 @@ server:
   interface-view: ${V6}::2 ads
   interface-view: ${V4}.3 malware
   interface-view: ${V6}::3 malware
+  # Bind the tunnel addresses even if wg0 isn't up yet at boot.
+  ip-freebind: yes
   verbosity: 0
   log-queries: no
   log-replies: no
@@ -145,7 +164,7 @@ systemctl restart unbound
 
 # ---- harbor-node agent -------------------------------------------------------
 install -m 755 "$HERE/../bin/harbor-node" /usr/local/bin/harbor-node 2>/dev/null \
-  || { echo "build harbor-node first: (cd backend && GOOS=linux go build -o bin/ ./cmd/harbor-node)" >&2; exit 1; }
+  || { echo "build harbor-node first: (cd backend && go build -o bin/ ./cmd/harbor-node)" >&2; exit 1; }
 [[ -f /etc/harbor/node.env ]] || {
   TOKEN="$(head -c 32 /dev/urandom | base64 | tr -d '/+=')"
   umask 077

@@ -6,6 +6,7 @@
 package api
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -44,7 +45,15 @@ type Server struct {
 	// TrustProxy uses the first X-Forwarded-For hop for rate limiting; enable
 	// only behind a reverse proxy that sets it.
 	TrustProxy bool
-	Now        func() time.Time
+	// MaxAccounts closes sign-ups once this many accounts exist (0 = open).
+	MaxAccounts int
+	// OwnerDays gives the first account created on the server this many
+	// days of paid access: the person who set up a private server.
+	OwnerDays int
+	// EnrollSecret lets new VPN nodes add themselves to the catalog
+	// (POST /v1/node/enroll). Empty disables enrollment.
+	EnrollSecret string
+	Now          func() time.Time
 	// Web, if set, serves the web app at "/".
 	Web http.Handler
 
@@ -70,6 +79,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/servers", s.listServers)
 	mux.HandleFunc("GET /v1/node/peers", s.withNode(s.nodePeers))
 	mux.HandleFunc("POST /v1/node/heartbeat", s.withNode(s.nodeHeartbeat))
+	mux.HandleFunc("POST /v1/node/enroll", s.enrollNode)
+	mux.HandleFunc("GET /v1/owner/enroll", s.withAccount(s.ownerEnroll))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	if s.Web != nil {
 		mux.Handle("GET /", s.Web)
@@ -94,11 +105,12 @@ type accountJSON struct {
 	Tier       string       `json:"tier"`
 	PaidUntil  *time.Time   `json:"paid_until"`
 	MaxDevices int          `json:"max_devices"`
+	Owner      bool         `json:"owner,omitempty"`
 	Devices    []deviceJSON `json:"devices"`
 }
 
 func (s *Server) accountView(a store.Account) accountJSON {
-	v := accountJSON{Tier: "free", MaxDevices: FreeDevices, Devices: []deviceJSON{}}
+	v := accountJSON{Tier: "free", MaxDevices: FreeDevices, Devices: []deviceJSON{}, Owner: a.Owner}
 	if a.Paid(s.Now()) {
 		v.Tier, v.MaxDevices = "paid", PaidDevices
 	}
@@ -132,9 +144,14 @@ func (s *Server) createAccount(w http.ResponseWriter, r *http.Request) {
 			internalError(w, err)
 			return
 		}
-		a, err := s.Store.CreateAccount(s.Hasher.Hash(num))
+		a, _, err := s.Store.CreateAccountCapped(s.Hasher.Hash(num), s.MaxAccounts, s.OwnerDays)
 		if errors.Is(err, store.ErrExists) {
 			continue
+		}
+		if errors.Is(err, store.ErrClosed) {
+			writeError(w, http.StatusForbidden, "signups_closed",
+				"This Harbor server isn't taking new accounts. If you already have one, sign in with your account number.")
+			return
 		}
 		if err != nil {
 			internalError(w, err)
@@ -298,7 +315,7 @@ func (s *Server) listServers(w http.ResponseWriter, _ *http.Request) {
 		Servers []serverJSON `json:"servers"`
 		DNS     dnsJSON      `json:"dns"`
 	}{Servers: []serverJSON{}}
-	for _, c := range s.Catalog.servers {
+	for _, c := range s.Catalog.Servers() {
 		online, load := s.Catalog.status(c)
 		if !online {
 			continue
@@ -368,6 +385,42 @@ func (s *Server) nodeHeartbeat(w http.ResponseWriter, r *http.Request, srv Serve
 	}
 	s.Catalog.record(srv.ID, req.ActivePeers, req.Mbps)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// enrollNode lets a freshly installed VPN node add itself to the server
+// list, so adding a country is just booting a server with the setup script.
+func (s *Server) enrollNode(w http.ResponseWriter, r *http.Request) {
+	tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if s.EnrollSecret == "" || !ok ||
+		subtle.ConstantTimeCompare([]byte(tok), []byte(s.EnrollSecret)) != 1 {
+		writeError(w, http.StatusUnauthorized, "invalid_enroll", "enrollment is disabled or the secret is wrong")
+		return
+	}
+	var req ServerConfig
+	if !readJSON(w, r, &req) {
+		return
+	}
+	saved, err := s.Catalog.Enroll(req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_server", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"id": saved.ID})
+}
+
+// ownerEnroll gives the server's owner the enrollment secret, so the web
+// app can show a ready-to-paste setup script for adding a location.
+func (s *Server) ownerEnroll(w http.ResponseWriter, _ *http.Request, a store.Account) {
+	if !a.Owner {
+		writeError(w, http.StatusForbidden, "not_owner", "Only the server's owner can add locations.")
+		return
+	}
+	if s.EnrollSecret == "" {
+		writeError(w, http.StatusNotFound, "enroll_disabled", "Adding locations isn't enabled on this server.")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]string{"secret": s.EnrollSecret})
 }
 
 // ---- helpers ----------------------------------------------------------------

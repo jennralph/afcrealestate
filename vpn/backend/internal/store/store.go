@@ -24,6 +24,7 @@ var (
 	ErrDeviceLimit   = errors.New("device limit reached")
 	ErrKeyInUse      = errors.New("public key already registered")
 	ErrPoolExhausted = errors.New("address pool exhausted")
+	ErrClosed        = errors.New("account limit reached")
 )
 
 // Device is one WireGuard key belonging to an account.
@@ -42,6 +43,8 @@ type Account struct {
 	Created   time.Time `json:"created"` // day precision only
 	PaidUntil time.Time `json:"paid_until"`
 	Devices   []Device  `json:"devices"`
+	// Owner marks the first account on the server: whoever set it up.
+	Owner bool `json:"owner,omitempty"`
 }
 
 // Paid reports whether the account has an active subscription at t.
@@ -135,19 +138,36 @@ func (st *Store) save() error {
 
 // CreateAccount registers a new account hash.
 func (st *Store) CreateAccount(hash string) (Account, error) {
+	a, _, err := st.CreateAccountCapped(hash, 0, 0)
+	return a, err
+}
+
+// CreateAccountCapped is CreateAccount for servers that limit sign-ups:
+// it refuses once maxAccounts exist (0 = no limit), and gives the very
+// first account on the server ownerDays of paid access, so whoever set the
+// server up gets every location and device slot without the App Store.
+func (st *Store) CreateAccountCapped(hash string, maxAccounts, ownerDays int) (Account, bool, error) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	if _, ok := st.s.Accounts[hash]; ok {
-		return Account{}, ErrExists
+		return Account{}, false, ErrExists
 	}
+	if maxAccounts > 0 && len(st.s.Accounts) >= maxAccounts {
+		return Account{}, false, ErrClosed
+	}
+	first := len(st.s.Accounts) == 0
 	y, m, d := st.now().UTC().Date()
 	a := &Account{Hash: hash, Created: time.Date(y, m, d, 0, 0, 0, 0, time.UTC), Devices: []Device{}}
+	a.Owner = first
+	if first && ownerDays > 0 {
+		a.PaidUntil = st.now().UTC().AddDate(0, 0, ownerDays)
+	}
 	st.s.Accounts[hash] = a
 	if err := st.save(); err != nil {
 		delete(st.s.Accounts, hash)
-		return Account{}, err
+		return Account{}, false, err
 	}
-	return clone(a), nil
+	return clone(a), first, nil
 }
 
 // Account returns a copy of the account with the given hash.

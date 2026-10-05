@@ -49,6 +49,8 @@ func main() {
 	sandbox := flag.Bool("allow-sandbox", false, "accept StoreKit sandbox/TestFlight transactions")
 	trustProxy := flag.Bool("trust-proxy", false, "use X-Forwarded-For for rate limiting")
 	webApp := flag.Bool("web", true, "serve the web app at /")
+	maxAccounts := flag.Int("max-accounts", 0, "close sign-ups once this many accounts exist (0 = open)")
+	ownerDays := flag.Int("owner-days", 0, "days of paid access for the first account created (private servers)")
 	flag.Parse()
 	log.SetFlags(0) // journald adds timestamps; we add nothing else
 
@@ -67,6 +69,12 @@ func main() {
 	srv := &api.Server{
 		Store: st, Catalog: cat, Hasher: account.NewHasher([]byte(secret)),
 		Pools: ipam.Default, TrustProxy: *trustProxy,
+		MaxAccounts: *maxAccounts, OwnerDays: *ownerDays,
+		// HARBOR_ENROLL_SECRET lets new VPN servers add themselves.
+		EnrollSecret: os.Getenv("HARBOR_ENROLL_SECRET"),
+	}
+	if srv.EnrollSecret != "" && len(srv.EnrollSecret) < 32 {
+		log.Fatal("HARBOR_ENROLL_SECRET must be at least 32 characters")
 	}
 	if *webApp {
 		srv.Web = web.Handler()
