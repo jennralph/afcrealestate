@@ -289,7 +289,7 @@ final class AppModel {
             try tunnel.start()
             settings.noteUsed(locationID: server.locationID)
             store.settings = settings
-        } catch where error is URLError && tunnel.isInstalled {
+        } catch is URLError where tunnel.isInstalled {
             // Harbor's API is unreachable (captive portal, outage). The
             // installed profile still works, so connect with it rather than
             // leave the user unprotected.

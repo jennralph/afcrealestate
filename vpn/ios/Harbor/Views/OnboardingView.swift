@@ -1,5 +1,6 @@
 import HarborCore
 import SwiftUI
+import UIKit
 
 struct OnboardingView: View {
     @Environment(AppModel.self) private var model
